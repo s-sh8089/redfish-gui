@@ -1,0 +1,18 @@
+services:
+  gui:
+    build:
+      context: ./gui
+    ports:
+      - "3008:3008"
+    env_file:
+      - path: ./gui/.env.local
+        required: false
+    volumes:
+      - ./gui/src:/app/src
+
+    networks:
+      - redfish-net
+
+networks:
+  redfish-net:
+    external: true

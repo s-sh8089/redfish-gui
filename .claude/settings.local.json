@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s https://raw.githubusercontent.com/s-sh8089/redfish-ras-emu/main/.gitignore)",
+      "Bash(curl -s https://raw.githubusercontent.com/s-sh8089/redfish-ras-emu/main/docker-compose.yml)"
+    ]
+  }
+}
