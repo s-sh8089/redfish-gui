@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { setBasicAuth, setTokenAuth, clearAuth, set401Handler } from '@/lib/api';
-import { useServer } from '@/context/ServerContext';
+import { useServer, ServerType } from '@/context/ServerContext';
 
 type StoredAuth =
   | { type: 'basic'; username: string; password: string }
@@ -14,6 +14,27 @@ type AuthContextValue = {
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 };
+
+const COOKIE_MAX_AGE = 60 * 60 * 8; // 8時間
+
+function saveAuthCookie(serverType: ServerType, auth: StoredAuth) {
+  const value = encodeURIComponent(JSON.stringify(auth));
+  document.cookie = `redfish_auth_${serverType}=${value}; SameSite=Strict; max-age=${COOKIE_MAX_AGE}; path=/`;
+}
+
+function loadAuthCookie(serverType: ServerType): StoredAuth | null {
+  const match = document.cookie.match(new RegExp(`redfish_auth_${serverType}=([^;]+)`));
+  if (!match) return null;
+  try {
+    return JSON.parse(decodeURIComponent(match[1])) as StoredAuth;
+  } catch {
+    return null;
+  }
+}
+
+function clearAuthCookie(serverType: ServerType) {
+  document.cookie = `redfish_auth_${serverType}=; SameSite=Strict; max-age=0; path=/`;
+}
 
 const AuthContext = createContext<AuthContextValue>({
   isAuthenticated: false,
@@ -38,8 +59,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   useEffect(() => {
-    const auth = authMap.current.get(serverKey);
+    let auth = authMap.current.get(serverKey) ?? loadAuthCookie(current.type);
     if (auth) {
+      authMap.current.set(serverKey, auth);
       if (auth.type === 'basic') {
         setBasicAuth(auth.username, auth.password);
       } else {
@@ -50,12 +72,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearAuth();
       setIsAuthenticated(false);
     }
-  }, [serverKey]);
+  }, [serverKey, current.type]);
 
   const login = useCallback(async (username: string, password: string) => {
     if (current.type === 'emu') {
       setBasicAuth(username, password);
-      authMap.current.set(serverKey, { type: 'basic', username, password });
+      const auth: StoredAuth = { type: 'basic', username, password };
+      authMap.current.set(serverKey, auth);
+      saveAuthCookie(current.type, auth);
       setIsAuthenticated(true);
     } else {
       const res = await fetch(`/api/proxy/${current.type}/redfish/v1/SessionService/Sessions`, {
@@ -73,17 +97,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const token = res.headers.get('x-auth-token');
       if (!token) throw new Error('認証トークンの取得に失敗しました');
       setTokenAuth(token);
-      authMap.current.set(serverKey, { type: 'token', token });
+      const auth: StoredAuth = { type: 'token', token };
+      authMap.current.set(serverKey, auth);
+      saveAuthCookie(current.type, auth);
       setIsAuthenticated(true);
     }
   }, [current, serverKey]);
 
   const logout = useCallback(() => {
     authMap.current.delete(serverKey);
+    clearAuthCookie(current.type);
     clearAuth();
     setIsAuthenticated(false);
     router.push('/login');
-  }, [serverKey, router]);
+  }, [serverKey, current.type, router]);
 
   return (
     <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
