@@ -89,6 +89,9 @@ export default function PowerEquipmentPage() {
   const [pduMetrics, setPduMetrics] = useState<AnyObj | null>(null);
   const [pduTab, setPduTab] = useState(0);
 
+  // Outlets state
+  const [outlets, setOutlets] = useState<AnyObj[]>([]);
+
   // UPS state
   const [ups, setUps] = useState<AnyObj | null>(null);
   const [upsOutlets, setUpsOutlets] = useState<AnyObj[]>([]);
@@ -115,6 +118,16 @@ export default function PowerEquipmentPage() {
 
   const notify = (msg: string, severity: 'success' | 'error' = 'success') =>
     setSnack({ open: true, msg, severity });
+
+  const fetchOutlets = useCallback(async () => {
+    try {
+      const col = await apiGet('/redfish/v1/PowerEquipment/Outlets') as AnyObj;
+      const items = await Promise.all(
+        ((col.Members ?? []) as AnyObj[]).map((m) => apiGet(m['@odata.id'] as string))
+      );
+      setOutlets(items as AnyObj[]);
+    } catch { /* ignore */ }
+  }, []);
 
   const fetchPdu = useCallback(async () => {
     try {
@@ -217,6 +230,7 @@ export default function PowerEquipmentPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     await Promise.all([
+      fetchOutlets(),
       fetchPdu(), fetchPduOutlets(), fetchPduSensors(),
       fetchPduMains(), fetchPduBranches(), fetchPduMetrics(),
       fetchUps(), fetchUpsOutlets(), fetchUpsSensors(),
@@ -224,6 +238,7 @@ export default function PowerEquipmentPage() {
     ]);
     setLoading(false);
   }, [
+    fetchOutlets,
     fetchPdu, fetchPduOutlets, fetchPduSensors,
     fetchPduMains, fetchPduBranches, fetchPduMetrics,
     fetchUps, fetchUpsOutlets, fetchUpsSensors,
@@ -237,7 +252,7 @@ export default function PowerEquipmentPage() {
       await apiPost(`${powerDialog.path}/Actions/Outlet.PowerControl`, { PowerState: powerState });
       notify(`${powerDialog.name}: ${powerState} を実行しました`);
       setPowerDialog({ open: false, path: '', name: '' });
-      await Promise.all([fetchPduOutlets(), fetchUpsOutlets()]);
+      await Promise.all([fetchOutlets(), fetchPduOutlets(), fetchUpsOutlets()]);
     } catch {
       notify('電源操作に失敗しました', 'error');
     }
@@ -435,6 +450,7 @@ export default function PowerEquipmentPage() {
       <Tabs value={mainTab} onChange={(_, v) => setMainTab(v)} sx={{ mb: 2 }}>
         <Tab label="RackPDU" />
         <Tab label="UPS" />
+        <Tab label={`Outlets (${outlets.length})`} />
       </Tabs>
 
       {/* RackPDU */}
@@ -575,6 +591,13 @@ export default function PowerEquipmentPage() {
             </TabPanel>
           </Stack>
         )}
+      </TabPanel>
+
+      {/* Standalone Outlets */}
+      <TabPanel value={mainTab} index={2}>
+        <OutletTable outlets={outlets}
+          basePath="/redfish/v1/PowerEquipment/Outlets"
+          onRefresh={fetchOutlets} />
       </TabPanel>
 
       {/* Outlet Power Control Dialog */}
